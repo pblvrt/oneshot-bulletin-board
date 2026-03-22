@@ -3,7 +3,7 @@
 import { Job, PHASE_CONFIG } from '@/utils/types'
 
 function truncateAddress(addr: string) {
-  if (addr.length <= 13) return addr
+  if (!addr || addr.length <= 13) return addr || 'unknown'
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`
 }
 
@@ -17,7 +17,7 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-export function JobCard({ job }: { job: Job }) {
+export function JobCard({ job, onAction }: { job: Job; onAction?: (action: string, job: Job) => void }) {
   const config = PHASE_CONFIG[job.phase]
 
   return (
@@ -41,6 +41,32 @@ export function JobCard({ job }: { job: Job }) {
         </a>
       )}
       {job.rejectReason && <p className='text-xs text-error opacity-70 mt-2'>{job.rejectReason}</p>}
+
+      {/* Phase action buttons */}
+      {onAction && (
+        <div className='flex gap-1 mt-2'>
+          {job.phase === 'open' && (
+            <button className='btn btn-xs btn-info' onClick={() => onAction('accept', job)}>
+              Accept
+            </button>
+          )}
+          {job.phase === 'funded' && (
+            <button className='btn btn-xs btn-warning' onClick={() => onAction('deliver', job)}>
+              Submit Deliverable
+            </button>
+          )}
+          {job.phase === 'submitted' && (
+            <>
+              <button className='btn btn-xs btn-success' onClick={() => onAction('approve', job)}>
+                Approve
+              </button>
+              <button className='btn btn-xs btn-error' onClick={() => onAction('reject', job)}>
+                Reject
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

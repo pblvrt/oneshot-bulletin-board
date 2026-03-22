@@ -14,9 +14,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/jobs')
       const data = await res.json()
-      if (data.jobs?.length) {
-        setJobs(data.jobs)
-      }
+      if (data.jobs) setJobs(data.jobs)
       setSource(data.source || 'unknown')
     } catch {
       setSource('offline')
@@ -27,15 +25,54 @@ export default function Home() {
 
   useEffect(() => {
     fetchJobs()
-    // Poll every 15s for new jobs/phase updates
-    const interval = setInterval(fetchJobs, 15000)
+    const interval = setInterval(fetchJobs, 10000)
     return () => clearInterval(interval)
   }, [fetchJobs])
 
   function handleSubmit(job: Job) {
     setJobs((prev) => [job, ...prev])
-    // Refetch after delay to pick up the onchain event
-    setTimeout(fetchJobs, 8000)
+    setTimeout(fetchJobs, 3000)
+  }
+
+  async function handleAction(action: string, job: Job) {
+    let body: Record<string, unknown> = { id: job.id }
+
+    switch (action) {
+      case 'accept':
+        body.phase = 'funded'
+        break
+      case 'deliver': {
+        const url = prompt('Enter deliverable URL:')
+        if (!url) return
+        body.phase = 'submitted'
+        body.deliverable = url
+        break
+      }
+      case 'approve':
+        body.phase = 'completed'
+        body.memoId = 0 // TODO: track real memo IDs
+        break
+      case 'reject': {
+        const reason = prompt('Rejection reason:')
+        if (!reason) return
+        body.phase = 'rejected'
+        body.rejectReason = reason
+        body.memoId = 0
+        break
+      }
+    }
+
+    try {
+      const res = await fetch('/api/jobs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const updated = await res.json()
+      setJobs((prev) => prev.map((j) => (j.id === updated.id ? { ...j, ...updated } : j)))
+    } catch (e) {
+      console.error('Action failed:', e)
+    }
   }
 
   return (
@@ -48,8 +85,8 @@ export default function Home() {
           </p>
         </div>
         <div className='flex items-center gap-3'>
-          <span className={`badge badge-sm ${source === 'onchain' ? 'badge-success' : 'badge-ghost'}`}>
-            {source === 'onchain' ? 'Live (Base)' : source === 'loading' ? 'Loading...' : source}
+          <span className={`badge badge-sm ${source === 'crm' ? 'badge-success' : 'badge-ghost'}`}>
+            {source === 'crm' ? 'Live' : source === 'loading' ? 'Loading...' : source}
           </span>
           <span className='text-xs opacity-40 font-mono'>{jobs.length} jobs</span>
           <SubmitJob onSubmit={handleSubmit} />
@@ -61,7 +98,7 @@ export default function Home() {
           <span className='loading loading-spinner loading-lg opacity-20' />
         </div>
       ) : (
-        <Board jobs={jobs} />
+        <Board jobs={jobs} onAction={handleAction} />
       )}
     </div>
   )

@@ -3,7 +3,7 @@
 import { Job, PHASES_ORDER, PHASE_CONFIG, JobPhase } from '@/utils/types'
 import { JobCard } from './JobCard'
 
-export function Board({ jobs }: { jobs: Job[] }) {
+export function Board({ jobs, onAction }: { jobs: Job[]; onAction?: (action: string, job: Job) => void }) {
   const grouped = PHASES_ORDER.reduce(
     (acc, phase) => {
       acc[phase] = jobs.filter((j) => j.phase === phase)
@@ -12,7 +12,6 @@ export function Board({ jobs }: { jobs: Job[] }) {
     {} as Record<JobPhase, Job[]>
   )
 
-  // Only show active columns (hide rejected/expired when empty)
   const activePhases = PHASES_ORDER.filter(
     (phase) => grouped[phase].length > 0 || ['open', 'funded', 'submitted', 'completed'].includes(phase)
   )
@@ -37,7 +36,7 @@ export function Board({ jobs }: { jobs: Job[] }) {
 
               <div className='flex flex-col gap-2 min-h-[300px] bg-base-200/30 rounded-xl p-2'>
                 {phaseJobs.map((job) => (
-                  <JobCard key={job.id} job={job} />
+                  <JobCard key={job.id} job={job} onAction={onAction} />
                 ))}
                 {phaseJobs.length === 0 && (
                   <div className='flex items-center justify-center h-24 text-xs opacity-20'>
