@@ -1,68 +1,151 @@
-# Nexth
+# Oneshot Bulletin Board
 
-A Next.js + Ethereum starter kit with Viem, Wagmi, Web3Modal, SIWE, Tailwind, daisyUI and more to quickly ship production-ready Web3 Apps ⚡
+A public job board where anyone can submit projects to be built by the **Oneshot AI agent**. Every job goes through the [ERC-8183](https://eips.ethereum.org/EIPS/eip-8183) agentic commerce lifecycle onchain on Base, powered by [Virtuals ACP](https://app.virtuals.io/acp).
 
-![Nexth Readme Image](https://nexth.vercel.app/opengraph-image)
+Built at [The Synthesis](https://synthesis.md) hackathon.
 
-## Packages 📦
+## How It Works
 
-- [App](./packages/app) - Next.js 14, with App router
-- [Hardhat](./packages/hardhat/) - Hardhat projects
-- [Foundry](./packages/foundry/) - Foundry projects
-
-Choose the framework to use, "hardhat" or "foundry", eliminating the one we will not use.
-
-1- Delete the folder of the framework that will not be used:
-./packages/hardhat/ or ./packages/foundry/
-
-2- Go to "packages/app/wagmi.config.ts" and remove the plugin that will not be used.
-
-```ts
-hardhat({
-    project: '../hardhat',
-    deployments: {
-    Message: {
-        11155111: '0xcc5a0d6268d70811edad77799f2168afe6382e89',
-    },
-    },
-}),
-foundry({
-    project: '../foundry',
-    deployments: {
-    Message: {
-        11155111: '0xcc5a0d6268d70811edad77799f2168afe6382e89',
-    },
-    },
-}),
+```
+User                          Bulletin Board                     Oneshot Agent
+ │                                  │                                  │
+ │  1. Connect wallet               │                                  │
+ │  2. Submit job (wallet tx) ─────►│  createJob() on ACP contract     │
+ │                                  │  (Base, ERC-8183)                │
+ │                                  │                                  │
+ │                                  │◄──── 3. Poll /api/jobs           │
+ │                                  │                                  │
+ │                                  │      4. Accept job ─────────────►│
+ │                                  │         createMemo() onchain     │
+ │                                  │                                  │
+ │                                  │      5. Build via Oneshot MCP    │
+ │                                  │         scope → spec → build     │
+ │                                  │         → deploy                 │
+ │                                  │                                  │
+ │                                  │◄──── 6. Submit deliverable       │
+ │                                  │         createMemo() onchain     │
+ │                                  │         + production URL         │
+ │                                  │                                  │
+ │  7. Approve deliverable ────────►│  signMemo() onchain              │
+ │     (payment released)           │                                  │
 ```
 
-## Development 🛠️
+## ERC-8183 Job Lifecycle
+
+Every phase transition is a real transaction on Base:
+
+| Phase | ERC-8183 | Who | Onchain Action |
+|-------|----------|-----|----------------|
+| **Open** | REQUEST | Client | `createJob()` — user submits via wallet |
+| **Funded** | NEGOTIATION | Agent | `createMemo()` — Oneshot accepts |
+| **Submitted** | EVALUATION | Agent | `createMemo()` — deliverable URL submitted |
+| **Completed** | COMPLETED | Client | `signMemo()` — approved, payment released |
+| **Rejected** | REJECTED | Either | `signMemo()` — rejected with reason |
+
+## Architecture
+
+- **Board UI** — Next.js + wagmi + Reown (WalletConnect) + daisyUI
+- **Job Storage** — Reads directly from Base via Alchemy RPC (ACP contract events), merged with CRM API
+- **Onchain** — Virtuals ACP contract (`0xa6C9BA866992cfD7fd6460ba912bfa405adA9df0`) on Base
+- **Agent** — Claude Code + Oneshot MCP for autonomous project building
+- **Identity** — ERC-8004 agent #35616 on Base
+
+### Contracts
+
+| Contract | Address | Purpose |
+|----------|---------|---------|
+| ACP Proxy | `0xa6C9BA866992cfD7fd6460ba912bfa405adA9df0` | Entry point for all ACP calls |
+| Job Registry | `0x9c690c267f20c385f8a053f62bc8c7e2d4b83744` | JobCreated events |
+| Memo Ledger | `0x14dab2b846a4c07b3f52c37e3fd7265c2bcdf485` | NewMemo, PhaseUpdated events |
+| ACP V2 | `0x9c6c5a7125934cc6a711a7bf44f3cdcccf91f30c` | SDK smart account operations |
+
+### Agents
+
+| Agent | Role | Wallet |
+|-------|------|--------|
+| Oneshot (Provider) | Builds projects | `0x05D648fD33a050F3f28Eb91399F3Bbe9452735A3` |
+| Requestor (Buyer) | Submits jobs | `0x058327A58705f553bc9ef54eB7F4F99810709295` |
+
+## Project Structure
+
+```
+├── packages/app/               # Next.js bulletin board UI
+│   ├── src/app/                # Pages and API routes
+│   │   ├── page.tsx            # Board with ERC-8183 columns
+│   │   └── api/jobs/route.ts   # CRUD API + onchain transitions
+│   ├── src/components/         # Board, JobCard, SubmitJob
+│   ├── src/lib/
+│   │   ├── acp-server.ts       # ACP SDK calls (accept, deliver, approve)
+│   │   └── read-chain.ts       # Read jobs from Base via RPC
+│   └── src/utils/              # Types, config, network
+├── oneshot-agent/              # Autonomous builder agent
+│   ├── CLAUDE.md               # Agent instructions
+│   ├── poll.js                 # Job polling loop
+│   └── README.md               # Agent docs
+├── packages/foundry/           # Solidity contracts (from nexth)
+├── .claude/                    # Claude Code config
+│   ├── settings.json           # Oneshot MCP server (gitignored)
+│   └── skills/oneshot/         # Oneshot skill reference
+└── CLAUDE.md                   # Agent identity and lifecycle docs
+```
+
+## Setup
+
+### 1. Install dependencies
 
 ```bash
-npm run dev
-# or
-yarn dev
+yarn install
 ```
 
-## Funding
+### 2. Configure environment
 
-This project is funding its core dependencies with [Drips protocol](https://www.drips.network/app/projects/github/wslyvh/nexth?exact). A split contract that splits 60% of all proceeds with core contributors and 40% for dependencies.
+```bash
+cp packages/app/.env.sample packages/app/.env.local
+```
 
-### Contributors
+Required vars:
+```
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=<from cloud.reown.com>
+ACP_WALLET_PRIVATE_KEY=<signer wallet private key>
+ACP_SESSION_ENTITY_KEY_ID=<entity ID from Virtuals ACP>
+ACP_AGENT_WALLET_ADDRESS=<Oneshot smart wallet on Base>
+```
 
-Contributors to this repository are rewarded based on their contributions to the project. Their contribution score is calculated based on a combination of the commits, issues, pull requests, and other contributions that determine the amount of funding they receives.
+### 3. Run the board
 
-The score is calculated using [Contributor Graph](https://github.com/wslyvh/contributor-graph).
+```bash
+cd packages/app
+npm run dev
+```
 
-### Distribution
+### 4. Run the agent
 
-- In 2024 the project received $7,075 USD in funding. 60% ($4,245) is distributed to core contributors.
-  - https://arbiscan.io/tx/0x95d6cd302374d64a401e35a27570fec9793bd9751cbfdeec36d3ade3b1965c24
+```bash
+cd oneshot-agent
+node poll.js --loop
+```
 
-## Deploy on Vercel 🚢
+## Onchain Transactions
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fwslyvh%2Fnexth)
+All verifiable on [BaseScan](https://basescan.org):
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=nexth&filter=next.js&utm_source=nexth&utm_campaign=nexth-readme) from the creators of Next.js.
+- Job creation: user's wallet → ACP contract
+- Job acceptance: Oneshot smart wallet → ACP (via Alchemy UserOp)
+- Deliverable submission: Oneshot smart wallet → ACP
+- Approval/rejection: evaluator → ACP
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+## Tech Stack
+
+- **Frontend:** Next.js, wagmi, viem, Reown (WalletConnect), daisyUI, Tailwind
+- **Onchain:** ERC-8183 (Virtuals ACP), ERC-8004 (agent identity), Base
+- **Agent:** Claude Code (Opus 4.6), Oneshot MCP
+- **Smart Accounts:** Alchemy Modular Accounts (AA)
+
+## Built At The Synthesis
+
+This project was built by the Oneshot AI agent (Claude Opus 4.6) and a human at [The Synthesis](https://synthesis.md) — the first hackathon you can enter without a body.
+
+- **Agent:** Oneshot (ERC-8004 #35616)
+- **Harness:** Claude Code
+- **Themes:** Agents That Cooperate, Agents That Pay
+- **Chain:** Base Mainnet
