@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { acceptJob, submitDeliverable, approveDeliverable, rejectJob, isAcpConfigured } from '@/lib/acp-server'
+import { acceptJob, submitDeliverable, approveDeliverable, rejectJob, claimBudget, isAcpConfigured } from '@/lib/acp-server'
 import { readOnchainJobs } from '@/lib/read-chain'
 
 type JobPhase = 'open' | 'funded' | 'submitted' | 'completed' | 'rejected' | 'expired'
@@ -23,21 +23,34 @@ interface StoredJob {
 const crmJobs: StoredJob[] = []
 let nextId = 1
 
+// Cache onchain results in memory (survives requests, not restarts)
+let onchainCache: StoredJob[] | null = null
+let onchainCacheTime = 0
+const CACHE_TTL = 60_000 // 1 minute
+
 export async function GET() {
-  // Read onchain jobs
+  // Read onchain jobs (cached)
   let onchainJobs: StoredJob[] = []
   let onchainError: string | undefined
-  try {
-    const raw = await readOnchainJobs()
-    onchainJobs = raw.map((j) => ({
-      ...j,
-      phase: j.phase as JobPhase,
-      onchainJobId: j.onchainJobId,
-      onchainTxns: [j.txHash],
-    }))
-  } catch (e: unknown) {
-    onchainError = e instanceof Error ? e.message : String(e)
-    console.error('Onchain read failed:', onchainError)
+
+  if (onchainCache && Date.now() - onchainCacheTime < CACHE_TTL) {
+    onchainJobs = onchainCache
+  } else {
+    try {
+      const raw = await readOnchainJobs()
+      onchainJobs = raw.map((j) => ({
+        ...j,
+        phase: j.phase as JobPhase,
+        onchainJobId: j.onchainJobId,
+        onchainTxns: [j.txHash],
+      }))
+      onchainCache = onchainJobs
+      onchainCacheTime = Date.now()
+    } catch (e: unknown) {
+      onchainError = e instanceof Error ? e.message : String(e)
+      console.error('Onchain read failed:', onchainError)
+      if (onchainCache) onchainJobs = onchainCache // use stale cache on error
+    }
   }
 
   // Merge: CRM jobs override onchain jobs by onchainJobId (CRM has richer data)
@@ -48,7 +61,7 @@ export async function GET() {
     merged.set(job.id, job)
   }
 
-  // Overlay CRM jobs (they have title/description from the form)
+  // Overlay CRM jobs
   for (const job of crmJobs) {
     if (job.onchainJobId) {
       const existing = merged.get(String(job.onchainJobId))
@@ -168,6 +181,16 @@ export async function PATCH(request: Request) {
             const result = await approveDeliverable(Number(memoId))
             onchainResult = { txnHash: result.txnHash }
             job.onchainTxns.push(result.txnHash)
+          }
+          // Claim escrowed USDC for the provider
+          if (job.onchainJobId) {
+            try {
+              const claimResult = await claimBudget(job.onchainJobId)
+              job.onchainTxns.push(claimResult.txnHash)
+            } catch (e: unknown) {
+              console.error(`Budget claim failed for job #${job.onchainJobId}:`, e instanceof Error ? e.message : e)
+              // Don't block completion if claim fails — can retry later
+            }
           }
           break
         }

@@ -42,16 +42,30 @@ export interface OnchainJob {
 
 export async function readOnchainJobs(): Promise<OnchainJob[]> {
   const current = await client.getBlockNumber()
-  // ~5.5 hours of blocks (max safe range)
-  const from = current - 2000n
+  // ~3 days of blocks, chunked into 9999-block batches (RPC limit)
+  const totalLookback = BigInt(130000)
+  const from = current - totalLookback
+  const CHUNK = BigInt(9999)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function getRawLogs(address: string, topics: string[]): Promise<any[]> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allLogs: any[] = []
+    let start = from
+    while (start < current) {
+      const end = start + CHUNK > current ? current : start + CHUNK
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const logs = await (client as any).getLogs({ address, topics, fromBlock: start, toBlock: end })
+        allLogs.push(...logs)
+      } catch {}
+      start = end + BigInt(1)
+    }
+    return allLogs
+  }
 
   // 1. Get JobCreated events
-  const jobLogs = await client.getLogs({
-    address: JOB_REGISTRY,
-    topics: [JOB_CREATED],
-    fromBlock: from,
-    toBlock: 'latest',
-  })
+  const jobLogs = await getRawLogs(JOB_REGISTRY, [JOB_CREATED])
 
   // Filter for Oneshot as provider
   const oneshotJobs: { jobId: number; client: string; memoId: number; block: number; tx: string }[] = []
@@ -77,28 +91,13 @@ export async function readOnchainJobs(): Promise<OnchainJob[]> {
   if (oneshotJobs.length === 0) return []
 
   // 2. Get memo content from memo ledger (creation memos)
-  const memoLogs = await client.getLogs({
-    address: MEMO_LEDGER,
-    topics: [NEW_MEMO],
-    fromBlock: from,
-    toBlock: 'latest',
-  })
+  const memoLogs = await getRawLogs(MEMO_LEDGER, [NEW_MEMO])
 
   // 3. Get phase updates
-  const phaseLogs = await client.getLogs({
-    address: MEMO_LEDGER,
-    topics: [PHASE_UPDATED],
-    fromBlock: from,
-    toBlock: 'latest',
-  })
+  const phaseLogs = await getRawLogs(MEMO_LEDGER, [PHASE_UPDATED])
 
   // 4. Get V2 memo events (from SDK calls like accept/deliver)
-  const v2MemoLogs = await client.getLogs({
-    address: ACP_V2,
-    topics: [V2_MEMO],
-    fromBlock: from,
-    toBlock: 'latest',
-  })
+  const v2MemoLogs = await getRawLogs(ACP_V2, [V2_MEMO])
 
   // Build job objects
   return oneshotJobs.map((job) => {

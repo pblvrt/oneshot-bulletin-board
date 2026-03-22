@@ -1,4 +1,5 @@
 import { AcpContractClientV2, baseAcpConfigV2 } from '@virtuals-protocol/acp-node'
+import { encodeFunctionData } from 'viem'
 
 let contractClient: AcpContractClientV2 | null = null
 
@@ -62,6 +63,34 @@ export async function approveDeliverable(memoId: number): Promise<{ userOpHash: 
 export async function rejectJob(memoId: number, reason: string): Promise<{ userOpHash: string; txnHash: string }> {
   const client = await getContractClient()
   const payload = client.signMemo(memoId, false, reason)
+  return await client.handleOperation([payload])
+}
+
+/**
+ * Provider claims escrowed USDC after job is completed (phase 4)
+ */
+export async function claimBudget(jobId: number): Promise<{ userOpHash: string; txnHash: string }> {
+  const client = await getContractClient()
+
+  const claimBudgetAbi = [{
+    name: 'claimBudget',
+    type: 'function' as const,
+    stateMutability: 'nonpayable' as const,
+    inputs: [{ name: 'jobId', type: 'uint256' as const }],
+    outputs: [],
+  }] as const
+
+  const data = encodeFunctionData({
+    abi: claimBudgetAbi,
+    functionName: 'claimBudget',
+    args: [BigInt(jobId)],
+  })
+
+  const payload = {
+    data,
+    contractAddress: baseAcpConfigV2.contractAddress,
+  }
+
   return await client.handleOperation([payload])
 }
 
