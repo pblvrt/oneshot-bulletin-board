@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useSwitchChain } from 'wagmi'
+import { useState, useEffect } from 'react'
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useSwitchChain, usePublicClient } from 'wagmi'
 import { base } from 'viem/chains'
 import { Job } from '@/utils/types'
 
@@ -34,8 +34,9 @@ export function SubmitJob({ onSubmit }: { onSubmit: (job: Job) => void }) {
   const [description, setDescription] = useState('')
   const [budget, setBudget] = useState('')
 
+  const publicClient = usePublicClient()
   const { writeContract, data: txHash, isPending } = useWriteContract()
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
+  const { isLoading: isConfirming, isSuccess, data: receipt } = useWaitForTransactionReceipt({ hash: txHash })
 
   const isWrongChain = isConnected && chainId !== base.id
 
@@ -62,11 +63,25 @@ export function SubmitJob({ onSubmit }: { onSubmit: (job: Job) => void }) {
       },
       {
         onSuccess: async (hash) => {
-          // Save to CRM API
+          // Wait for receipt to extract onchain job ID from logs
+          let onchainJobId: number | undefined
+          try {
+            const txReceipt = await publicClient?.waitForTransactionReceipt({ hash })
+            // JobCreated event from 0x9c690c... has jobId in topics[1]
+            const jobCreatedLog = txReceipt?.logs.find(
+              (l) => l.address.toLowerCase() === '0x9c690c267f20c385f8a053f62bc8c7e2d4b83744'
+                && l.topics[0] === '0x01f44c6fb50369375eaa1dd51c061b72050089ada4694f86e9a340f05b345806'
+            )
+            if (jobCreatedLog?.topics[1]) {
+              onchainJobId = parseInt(jobCreatedLog.topics[1], 16)
+            }
+          } catch {}
+
+          // Save to CRM API with onchain job ID
           const res = await fetch('/api/jobs', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, description, client: address, budget, txHash: hash }),
+            body: JSON.stringify({ title, description, client: address, budget, txHash: hash, onchainJobId }),
           })
           const saved = await res.json()
 

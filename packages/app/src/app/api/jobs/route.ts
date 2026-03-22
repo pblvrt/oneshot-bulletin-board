@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { acceptJob, submitDeliverable, approveDeliverable, rejectJob } from '@/lib/acp-server'
+import { acceptJob, submitDeliverable, approveDeliverable, rejectJob, isAcpConfigured } from '@/lib/acp-server'
 
 type JobPhase = 'open' | 'funded' | 'submitted' | 'completed' | 'rejected' | 'expired'
 
@@ -15,15 +15,19 @@ interface StoredJob {
   onchainJobId?: number
   deliverable?: string
   rejectReason?: string
-  memoIds: number[]
+  onchainTxns: string[]
 }
 
-// In-memory store
 const jobs: StoredJob[] = []
 let nextId = 1
 
 export async function GET() {
-  return NextResponse.json({ jobs, source: 'crm', count: jobs.length })
+  return NextResponse.json({
+    jobs,
+    source: isAcpConfigured() ? 'crm+acp' : 'crm',
+    count: jobs.length,
+    acpConfigured: isAcpConfigured(),
+  })
 }
 
 export async function POST(request: Request) {
@@ -39,12 +43,12 @@ export async function POST(request: Request) {
     title,
     description,
     client: client || 'anonymous',
-    budget: budget ? (budget.includes('USDC') ? budget : `${budget} USDC`) : 'TBD',
+    budget: budget ? (String(budget).includes('USDC') ? budget : `${budget} USDC`) : 'TBD',
     phase: 'open',
     createdAt: new Date().toISOString(),
     txHash,
-    onchainJobId: onchainJobId || undefined,
-    memoIds: [],
+    onchainJobId: onchainJobId ? Number(onchainJobId) : undefined,
+    onchainTxns: txHash ? [txHash] : [],
   }
 
   jobs.push(job)
@@ -60,55 +64,66 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 })
   }
 
-  const jobIdOnchain = onchainJobId || job.onchainJobId
-  let onchainResult = null
+  // Update onchain job ID if provided
+  if (onchainJobId) job.onchainJobId = Number(onchainJobId)
 
-  // Execute onchain phase transitions
-  if (phase && jobIdOnchain) {
+  const acpReady = isAcpConfigured() && job.onchainJobId
+  let onchainResult: { txnHash?: string; error?: string } = {}
+
+  // Execute onchain transitions via ACP SDK
+  if (phase && acpReady) {
     try {
       switch (phase) {
         case 'funded': {
-          // Provider accepts the job → NEGOTIATION
-          onchainResult = await acceptJob(jobIdOnchain, `Accepted: ${job.title}`)
+          const result = await acceptJob(job.onchainJobId!)
+          onchainResult = { txnHash: result.txnHash }
+          job.onchainTxns.push(result.txnHash)
+          console.log(`Job #${job.id} accepted onchain: ${result.txnHash}`)
           break
         }
         case 'submitted': {
-          // Provider submits deliverable → EVALUATION
           if (!deliverable) {
-            return NextResponse.json({ error: 'Deliverable URL required for submission' }, { status: 400 })
+            return NextResponse.json({ error: 'deliverable URL required' }, { status: 400 })
           }
-          onchainResult = await submitDeliverable(jobIdOnchain, deliverable)
+          const result = await submitDeliverable(job.onchainJobId!, deliverable)
+          onchainResult = { txnHash: result.txnHash }
+          job.onchainTxns.push(result.txnHash)
+          console.log(`Job #${job.id} deliverable submitted onchain: ${result.txnHash}`)
           break
         }
         case 'completed': {
-          // Approve deliverable → COMPLETED
-          if (!memoId) {
-            return NextResponse.json({ error: 'memoId required to approve' }, { status: 400 })
+          if (memoId) {
+            const result = await approveDeliverable(Number(memoId))
+            onchainResult = { txnHash: result.txnHash }
+            job.onchainTxns.push(result.txnHash)
+            console.log(`Job #${job.id} approved onchain: ${result.txnHash}`)
           }
-          onchainResult = await approveDeliverable(memoId, 'Deliverable approved')
           break
         }
         case 'rejected': {
-          if (!memoId) {
-            return NextResponse.json({ error: 'memoId required to reject' }, { status: 400 })
+          if (memoId) {
+            const result = await rejectJob(Number(memoId), rejectReason || 'Rejected')
+            onchainResult = { txnHash: result.txnHash }
+            job.onchainTxns.push(result.txnHash)
+            console.log(`Job #${job.id} rejected onchain: ${result.txnHash}`)
           }
-          onchainResult = await rejectJob(memoId, rejectReason || 'Rejected')
           break
         }
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
-      console.error('Onchain transition failed:', msg)
-      // Still update CRM state even if onchain fails
+      console.error(`Onchain transition failed for job #${job.id}:`, msg)
       onchainResult = { error: msg }
     }
   }
 
-  // Update CRM state
+  // Always update CRM state
   if (phase) job.phase = phase
   if (deliverable) job.deliverable = deliverable
   if (rejectReason) job.rejectReason = rejectReason
-  if (onchainJobId) job.onchainJobId = onchainJobId
 
-  return NextResponse.json({ ...job, onchainResult })
+  return NextResponse.json({
+    ...job,
+    onchainResult,
+  })
 }
