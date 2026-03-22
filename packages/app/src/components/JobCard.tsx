@@ -9,8 +9,10 @@ function truncateAddress(addr: string) {
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime()
-  const hours = Math.floor(diff / 3600000)
-  if (hours < 1) return 'just now'
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
   if (hours < 24) return `${hours}h ago`
   return `${Math.floor(hours / 24)}d ago`
 }
@@ -19,31 +21,26 @@ export function JobCard({ job }: { job: Job }) {
   const config = PHASE_CONFIG[job.phase]
 
   return (
-    <div className='card bg-base-200 shadow-sm'>
-      <div className='card-body p-4 gap-2'>
-        <div className='flex items-start justify-between gap-2'>
-          <h3 className='card-title text-sm'>{job.title}</h3>
-          <span className={`badge badge-sm ${config.color}`}>{config.label}</span>
-        </div>
-
-        <p className='text-xs opacity-60 line-clamp-2'>{job.description}</p>
-
-        <div className='flex items-center justify-between mt-1'>
-          <div className='flex items-center gap-2 text-xs opacity-50'>
-            <code>{truncateAddress(job.client)}</code>
-            <span>·</span>
-            <span>{timeAgo(job.createdAt)}</span>
-          </div>
-          <span className='badge badge-sm badge-outline font-mono'>{job.budget}</span>
-        </div>
-
-        {job.deliverable && (
-          <a href={job.deliverable} target='_blank' rel='noopener noreferrer' className='link link-info text-xs mt-1'>
-            View deliverable →
-          </a>
-        )}
-        {job.rejectReason && <p className='text-xs text-error mt-1'>{job.rejectReason}</p>}
+    <div className='bg-base-100 rounded-lg p-3 border border-base-content/5 hover:border-base-content/10 transition-colors'>
+      <div className='flex items-start justify-between gap-2 mb-1.5'>
+        <h3 className='text-sm font-medium leading-tight'>{job.title}</h3>
       </div>
+
+      <p className='text-xs opacity-40 line-clamp-2 mb-2'>{job.description}</p>
+
+      <div className='flex items-center gap-2 text-xs'>
+        <code className='opacity-30'>{truncateAddress(job.client)}</code>
+        <span className='opacity-20'>·</span>
+        <span className='opacity-30'>{timeAgo(job.createdAt)}</span>
+        <span className='ml-auto font-mono opacity-50'>{job.budget}</span>
+      </div>
+
+      {job.deliverable && (
+        <a href={job.deliverable} target='_blank' rel='noopener noreferrer' className='text-xs text-info mt-2 block'>
+          View deliverable →
+        </a>
+      )}
+      {job.rejectReason && <p className='text-xs text-error opacity-70 mt-2'>{job.rejectReason}</p>}
     </div>
   )
 }

@@ -12,33 +12,43 @@ export function Board({ jobs }: { jobs: Job[] }) {
     {} as Record<JobPhase, Job[]>
   )
 
-  return (
-    <div className='grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4'>
-      {PHASES_ORDER.map((phase) => {
-        const config = PHASE_CONFIG[phase]
-        const phaseJobs = grouped[phase]
+  // Only show active columns (hide rejected/expired when empty)
+  const activePhases = PHASES_ORDER.filter(
+    (phase) => grouped[phase].length > 0 || ['open', 'funded', 'submitted', 'completed'].includes(phase)
+  )
 
-        return (
-          <div key={phase} className='flex flex-col gap-2'>
-            <div className='flex items-center gap-2 px-1'>
-              <span className={`badge badge-xs ${config.color}`} />
-              <span className='text-sm font-semibold'>{config.label}</span>
-              <span className='text-xs opacity-40 ml-auto'>{phaseJobs.length}</span>
+  return (
+    <div className='overflow-x-auto'>
+      <div className='flex gap-4 min-w-max'>
+        {activePhases.map((phase) => {
+          const config = PHASE_CONFIG[phase]
+          const phaseJobs = grouped[phase]
+
+          return (
+            <div key={phase} className='w-72 flex-shrink-0'>
+              <div className='flex items-center gap-2 mb-3 px-1'>
+                <div className={`w-2.5 h-2.5 rounded-full ${config.dot}`} />
+                <span className='text-sm font-semibold'>{config.label}</span>
+                {phaseJobs.length > 0 && (
+                  <span className='text-xs opacity-30'>{phaseJobs.length}</span>
+                )}
+                <span className='text-xs opacity-20 ml-auto font-mono'>{config.erc8183}</span>
+              </div>
+
+              <div className='flex flex-col gap-2 min-h-[300px] bg-base-200/30 rounded-xl p-2'>
+                {phaseJobs.map((job) => (
+                  <JobCard key={job.id} job={job} />
+                ))}
+                {phaseJobs.length === 0 && (
+                  <div className='flex items-center justify-center h-24 text-xs opacity-20'>
+                    No jobs
+                  </div>
+                )}
+              </div>
             </div>
-            <div className='text-xs opacity-30 px-1 font-mono'>{config.erc8183}</div>
-            <div className='flex flex-col gap-2 min-h-[120px]'>
-              {phaseJobs.map((job) => (
-                <JobCard key={job.id} job={job} />
-              ))}
-              {phaseJobs.length === 0 && (
-                <div className='border border-dashed border-base-content/10 rounded-lg p-4 text-xs opacity-30 text-center'>
-                  No jobs
-                </div>
-              )}
-            </div>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
     </div>
   )
 }
