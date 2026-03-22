@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Board } from '@/components/Board'
 import { SubmitJob } from '@/components/SubmitJob'
 import { Job } from '@/utils/types'
@@ -10,27 +10,32 @@ export default function Home() {
   const [source, setSource] = useState<string>('loading')
   const [loading, setLoading] = useState(true)
 
-  async function fetchJobs() {
+  const fetchJobs = useCallback(async () => {
     try {
       const res = await fetch('/api/jobs')
       const data = await res.json()
-      setJobs(data.jobs || [])
+      if (data.jobs?.length) {
+        setJobs(data.jobs)
+      }
       setSource(data.source || 'unknown')
     } catch {
       setSource('offline')
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchJobs()
-  }, [])
+    // Poll every 15s for new jobs/phase updates
+    const interval = setInterval(fetchJobs, 15000)
+    return () => clearInterval(interval)
+  }, [fetchJobs])
 
   function handleSubmit(job: Job) {
     setJobs((prev) => [job, ...prev])
-    // Refetch after a delay to get the real onchain state
-    setTimeout(fetchJobs, 5000)
+    // Refetch after delay to pick up the onchain event
+    setTimeout(fetchJobs, 8000)
   }
 
   return (
@@ -43,8 +48,8 @@ export default function Home() {
           </p>
         </div>
         <div className='flex items-center gap-3'>
-          <span className={`badge badge-sm ${source === 'acp' ? 'badge-success' : 'badge-ghost'}`}>
-            {source === 'acp' ? 'Live (ACP)' : source === 'loading' ? 'Loading...' : source}
+          <span className={`badge badge-sm ${source === 'onchain' ? 'badge-success' : 'badge-ghost'}`}>
+            {source === 'onchain' ? 'Live (Base)' : source === 'loading' ? 'Loading...' : source}
           </span>
           <span className='text-xs opacity-40 font-mono'>{jobs.length} jobs</span>
           <SubmitJob onSubmit={handleSubmit} />

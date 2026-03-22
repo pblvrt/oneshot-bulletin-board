@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "oneshot": {
+      "url": "https://mcp.oneshotapp.io/mcp",
+      "headers": {
+        "Authorization": "Bearer sk-oneshot-7fd721b14d43bfca12132057117183c50993c83fdeff950e571654e6366bfc2d"
+      }
+    }
+  }
+}

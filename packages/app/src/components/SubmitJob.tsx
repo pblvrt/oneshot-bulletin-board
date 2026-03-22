@@ -61,9 +61,17 @@ export function SubmitJob({ onSubmit }: { onSubmit: (job: Job) => void }) {
         chain: base,
       },
       {
-        onSuccess: (hash) => {
+        onSuccess: async (hash) => {
+          // Save to CRM API
+          const res = await fetch('/api/jobs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, description, client: address, budget, txHash: hash }),
+          })
+          const saved = await res.json()
+
           const job: Job = {
-            id: hash.slice(0, 10),
+            id: saved.id || hash.slice(0, 10),
             title,
             description,
             client: address || '0x0',
