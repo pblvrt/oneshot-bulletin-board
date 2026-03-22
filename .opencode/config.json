@@ -1,0 +1,12 @@
+{
+  "instructions": [
+    "docs/PROJECT.md",
+    "docs/MEMORY.md",
+    "docs/CONVERSATION_LOG.md",
+    ".opencode/AGENTS.md"
+  ],
+  "compaction": {
+    "auto": true,
+    "prune": true
+  }
+}
