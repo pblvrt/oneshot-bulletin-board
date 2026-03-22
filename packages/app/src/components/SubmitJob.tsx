@@ -50,7 +50,7 @@ export function SubmitJob({ onSubmit }: { onSubmit: (job: Job) => void }) {
     }
 
     const expiredAt = BigInt(Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60)
-    const budgetWei = budget ? BigInt(Math.floor(parseFloat(budget) * 1e6)) : 0n // USDC has 6 decimals
+    const budgetWei = budget ? BigInt(Math.floor(parseFloat(budget) * 1e6)) : BigInt(0) // USDC has 6 decimals
     const metadata = JSON.stringify({ title, description })
 
     writeContract(
