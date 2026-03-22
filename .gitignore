@@ -57,4 +57,5 @@ next-env.d.ts
 
 # subgraph
 **/subgraph/node_modules
-**/subgraph/build
+**/subgraph/build.claude/settings.json
+packages/app/.env.local
